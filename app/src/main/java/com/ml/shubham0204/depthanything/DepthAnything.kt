@@ -16,7 +16,11 @@ import java.nio.ByteBuffer
 class DepthAnything(context: Context, val modelName: String) {
 
     private val ortEnvironment = OrtEnvironment.getEnvironment()
-    private val ortSession = ortEnvironment.createSession(context.assets.open(modelName).readBytes())
+    val sessionOptions = OrtSession.SessionOptions().also {
+        it.addNnapi()
+    }
+    private val ortSession =
+        ortEnvironment.createSession(context.assets.open(modelName).readBytes(), sessionOptions)
     private val inputName = ortSession.inputNames.iterator().next()
 
     private val inputDim: Int
@@ -28,15 +32,20 @@ class DepthAnything(context: Context, val modelName: String) {
                 inputDim = 256
                 outputDim = 252
             }
+
             modelName.contains("_512") -> {
                 inputDim = 512
                 outputDim = 504
             }
+
             else -> throw IllegalArgumentException("Unsupported model size")
         }
     }
 
-    private val rotateTransform = Matrix().apply { postRotate(90f) }
+    private val rotateTransform = Matrix().apply {
+        postRotate(90f)
+        postScale(-1f, 1f)
+    }
 
     suspend fun predict(inputImage: Bitmap): Pair<Bitmap, Long> =
         withContext(Dispatchers.Default) {

@@ -1,6 +1,8 @@
 package com.ml.shubham0204.depthanything
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -8,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -20,7 +23,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
@@ -43,38 +49,82 @@ class MainActivity : ComponentActivity() {
     private var depthImageState = mutableStateOf<Bitmap?>(null)
     private var inferenceTimeState = mutableLongStateOf(0)
     private var progressState = mutableStateOf(false)
+    private var cameraXState = mutableStateOf(false)
+    private var osCameraState = mutableStateOf(false)
     private lateinit var depthAnything: DepthAnything
     private var currentPhotoPath: String = ""
-    private var selectedModelState = mutableStateOf("fused_model_uint8_256.onnx")
+    private var selectedModelState = mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        depthAnything = DepthAnything(this, selectedModelState.value)
 
         setContent { ActivityUI() }
     }
 
     @Composable
     private fun ActivityUI() {
+        var showPermissionDialog by remember { mutableStateOf(false) }
+        var permissionDenied by remember { mutableStateOf(false) }
+
+        val cameraPermissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                permissionDenied = false
+                showPermissionDialog = false
+            } else {
+                permissionDenied = true
+                showPermissionDialog = true
+            }
+        }
+
+        LaunchedEffect(Unit) {
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
+
         DepthAnythingTheme {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
             ) {
                 val depthImage by remember { depthImageState }
+                val showCameraX by remember { cameraXState }
                 ProgressDialog()
+
+                if (showPermissionDialog) {
+                    PermissionDeniedDialog(
+                        onDismiss = { showPermissionDialog = false },
+                        onOpenSettings = {
+                            val intent =
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", packageName, null)
+                                }
+                            startActivity(intent)
+                        }
+                    )
+                }
+
                 if (depthImage != null) {
                     DepthImageUI(depthImage = depthImage!!)
+                } else if (showCameraX) {
+                    if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                        CameraModeUI()
+                    } else {
+                        // Show permission dialog and reset camera state
+                        cameraXState.value = false
+                        showPermissionDialog = true
+                    }
                 } else {
-                    ImageSelectionUI()
+                    ImageSelectionUI(onPermissionDenied = { showPermissionDialog = true })
                 }
             }
         }
     }
 
     @Composable
-    private fun ImageSelectionUI() {
+    private fun ImageSelectionUI(onPermissionDenied: () -> Unit) {
         val pickMediaLauncher =
             rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.PickVisualMedia()
@@ -185,7 +235,14 @@ class MainActivity : ComponentActivity() {
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { dispatchTakePictureIntent() }) { Text(text = "Take A Picture") }
+            Button(onClick = {
+                if (this@MainActivity.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    osCameraState.value = true
+                    dispatchTakePictureIntent()
+                } else {
+                    onPermissionDenied()
+                }
+            }) { Text(text = "Take A Picture") }
 
             Button(
                 onClick = {
@@ -196,11 +253,121 @@ class MainActivity : ComponentActivity() {
             ) {
                 Text(text = "Select From Gallery")
             }
+
+            Button(onClick = {
+                if (this@MainActivity.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    cameraXState.value = true
+                } else {
+                    onPermissionDenied()
+                }
+            }) {
+                Text(text = "Use Camera for live inference")
+            }
         }
     }
 
     private fun listModelsInAssets(): List<String> {
         return assets.list("")?.filter { it.endsWith(".onnx") } ?: emptyList()
+    }
+
+    @Composable
+    private fun CameraModeUI() {
+        var depthBitmap by remember { mutableStateOf<Bitmap?>(null) }
+        var isProcessing by remember { mutableStateOf(false) }
+
+        val fps = if (inferenceTimeState.longValue > 0) {
+            1000f / inferenceTimeState.longValue.toFloat()
+        } else {
+            0f
+        }
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Raw frames view
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RectangleShape)
+            ) {
+                CameraPreview(
+                    onFrameCaptured = { bitmap ->
+                        if (!isProcessing) {
+                            isProcessing = true
+                            CoroutineScope(Dispatchers.Default).launch {
+                                val (depthMap, inferenceTime) = depthAnything.predict(bitmap)
+                                val matrix = Matrix().apply {
+                                    postRotate(-90f)
+                                    postScale(-1f, -1f)
+                                }
+                                depthBitmap = Bitmap.createBitmap(
+                                    colormapInferno(depthMap),
+                                    0, 0,
+                                    colormapInferno(depthMap).width,
+                                    colormapInferno(depthMap).height,
+                                    matrix,
+                                    true
+                                )
+                                inferenceTimeState.longValue = inferenceTime
+                                withContext(Dispatchers.Main) {
+                                    isProcessing = false
+                                }
+                            }
+                        }
+                    },
+                    isProcessing = isProcessing,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // Depth map view
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RectangleShape)
+            ) {
+                if (depthBitmap != null) {
+                    Image(
+                        modifier = Modifier.fillMaxSize(),
+                        bitmap = depthBitmap!!.asImageBitmap(),
+                        contentDescription = "Depth Map",
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Processing depth...")
+                    }
+                }
+            }
+
+            // Controls row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Button(onClick = { cameraXState.value = false }) {
+                    Text("Back")
+                }
+
+                Text(
+                    text = "FPS: ${"%.2f".format(fps)}",
+                    modifier = Modifier.align(Alignment.CenterVertically)
+                )
+                Text(
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                    text = "Inference time: ${inferenceTimeState.longValue} ms"
+                )
+            }
+            Text(
+                modifier = Modifier.padding(start = 16.dp),
+                text = "Model: ${depthAnything.modelName}"
+            )
+        }
     }
 
     @Composable
@@ -225,9 +392,9 @@ class MainActivity : ComponentActivity() {
             }
             Image(
                 modifier =
-                Modifier
-                    .aspectRatio(depthImage.width.toFloat() / depthImage.height.toFloat())
-                    .zoomable(rememberZoomState()),
+                    Modifier
+                        .aspectRatio(depthImage.width.toFloat() / depthImage.height.toFloat())
+                        .zoomable(rememberZoomState()),
                 bitmap = depthImage.asImageBitmap(),
                 contentDescription = "Depth Image"
             )
@@ -238,10 +405,37 @@ class MainActivity : ComponentActivity() {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
+    private fun PermissionDeniedDialog(
+        onDismiss: () -> Unit,
+        onOpenSettings: () -> Unit
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Camera Permission Required") },
+            text = { Text("Camera permission is required to use the camera feature. Please grant permission in app settings.") },
+            confirmButton = {
+                Button(
+                    onClick = onOpenSettings
+                ) {
+                    Text("Open Settings")
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = onDismiss
+                ) {
+                    Text("Dismiss")
+                }
+            }
+        )
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
     private fun ProgressDialog() {
         val isShowingProgress by remember { progressState }
         if (isShowingProgress) {
-            BasicAlertDialog(onDismissRequest = { /* ProgressDialog is not cancellable */}) {
+            BasicAlertDialog(onDismissRequest = { /* ProgressDialog is not cancellable */ }) {
                 Surface(color = androidx.compose.ui.graphics.Color.White) {
                     Column(
                         modifier = Modifier.padding(16.dp),
