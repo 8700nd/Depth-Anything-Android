@@ -11,6 +11,10 @@ activity-compose = "1.9.0"
 compose-bom = "2024.06.00"
 onnx = "1.17.0"
 zoomable = "1.6.0"
+camerax-core = "1.4.0-alpha04"
+camerax-camera2 = "1.4.0-alpha04"
+camerax-lifecycle = "1.4.0-alpha04"
+camerax-view = "1.4.0-alpha04"
 
 [libraries]
 androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifinterface" }
@@ -30,6 +34,10 @@ ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 material3 = { group = "androidx.compose.material3", name = "material3" }
 onnx = { group = "com.microsoft.onnxruntime"  , name="onnxruntime-android" , version.ref="onnx" }
 zoomable = { module = "net.engawapg.lib:zoomable", version.ref = "zoomable" }
+camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax-core" }
+camerax-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax-camera2" }
+camerax-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax-lifecycle" }
+camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax-view" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
