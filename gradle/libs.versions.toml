@@ -9,7 +9,10 @@ espresso-core = "3.5.1"
 lifecycle-runtime-ktx = "2.8.2"
 activity-compose = "1.9.0"
 compose-bom = "2024.06.00"
-onnx = "1.17.0"
+tensorflow-lite-gpu-api = "2.10.0"
+tensorflow_lite = "2.16.1"
+tensorflow-lite-gpu = "2.16.1"
+tensorflow-lite-support = "0.4.4"
 zoomable = "1.6.0"
 camerax-core = "1.4.0-alpha04"
 camerax-camera2 = "1.4.0-alpha04"
@@ -32,7 +35,10 @@ ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview
 ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 material3 = { group = "androidx.compose.material3", name = "material3" }
-onnx = { group = "com.microsoft.onnxruntime"  , name="onnxruntime-android" , version.ref="onnx" }
+tensorflow-lite = { group = "org.tensorflow", name = "tensorflow-lite", version.ref = "tensorflow_lite" }
+tensorflow-lite-gpu = { module = "org.tensorflow:tensorflow-lite-gpu", version.ref = "tensorflow-lite-gpu" }
+tensorflow-lite-gpu-api = { module = "org.tensorflow:tensorflow-lite-gpu-api", version.ref = "tensorflow-lite-gpu-api" }
+tensorflow-lite-support = { module = "org.tensorflow:tensorflow-lite-support", version.ref = "tensorflow-lite-support" }
 zoomable = { module = "net.engawapg.lib:zoomable", version.ref = "zoomable" }
 camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax-core" }
 camerax-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax-camera2" }

@@ -53,12 +53,13 @@ class MainActivity : ComponentActivity() {
     private var osCameraState = mutableStateOf(false)
     private lateinit var depthAnything: DepthAnything
     private var currentPhotoPath: String = ""
-    private var selectedModelState = mutableStateOf("fused_model_uint8_256.onnx")
+    private var selectedModelState = mutableStateOf("Depth-Anything-V2.tflite")
+    private var selectedDelegateState = mutableStateOf(DelegateType.CPU)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        depthAnything = DepthAnything(this, selectedModelState.value)
+        depthAnything = DepthAnything(this, selectedModelState.value, selectedDelegateState.value)
 
         setContent { ActivityUI() }
     }
@@ -229,7 +230,40 @@ class MainActivity : ComponentActivity() {
                             onClick = {
                                 selectedModelState.value = model
                                 expanded = false
-                                depthAnything = DepthAnything(this@MainActivity, model)
+                                depthAnything = DepthAnything(this@MainActivity, model, selectedDelegateState.value)
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Delegate selection dropdown
+            var delegateExpanded by remember { mutableStateOf(false) }
+            val delegates = listOf(DelegateType.CPU, DelegateType.GPU, DelegateType.NNAPI)
+
+            Box {
+                OutlinedButton(
+                    onClick = { delegateExpanded = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(selectedDelegateState.value.name)
+                }
+                DropdownMenu(
+                    expanded = delegateExpanded,
+                    onDismissRequest = { delegateExpanded = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    delegates.forEach { delegate ->
+                        DropdownMenuItem(
+                            text = { Text(delegate.name) },
+                            onClick = {
+                                selectedDelegateState.value = delegate
+                                delegateExpanded = false
+                                depthAnything = DepthAnything(
+                                    this@MainActivity,
+                                    selectedModelState.value,
+                                    selectedDelegateState.value
+                                )
                             }
                         )
                     }
@@ -269,7 +303,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun listModelsInAssets(): List<String> {
-        return assets.list("")?.filter { it.endsWith(".onnx") } ?: emptyList()
+        return assets.list("")?.filter { it.endsWith(".tflite") } ?: emptyList()
     }
 
     @Composable
@@ -298,7 +332,6 @@ class MainActivity : ComponentActivity() {
                             CoroutineScope(Dispatchers.Default).launch {
                                 val (depthMap, inferenceTime) = depthAnything.predict(bitmap)
                                 val matrix = Matrix().apply {
-                                    postRotate(-90f)
                                     postScale(-1f, 1f)
                                 }
                                 depthBitmap = Bitmap.createBitmap(
@@ -392,12 +425,17 @@ class MainActivity : ComponentActivity() {
                     Text(text = "Close")
                 }
             }
+            val rotatedDepth = remember(depthImage) {
+                val matrix = Matrix().apply { postRotate(-90f) } // rotate counterclockwise
+                Bitmap.createBitmap(depthImage, 0, 0, depthImage.width, depthImage.height, matrix, true)
+            }
+
             Image(
                 modifier =
-                    Modifier
-                        .aspectRatio(depthImage.width.toFloat() / depthImage.height.toFloat())
-                        .zoomable(rememberZoomState()),
-                bitmap = depthImage.asImageBitmap(),
+                Modifier
+                    .aspectRatio(rotatedDepth.width.toFloat() / rotatedDepth.height.toFloat())
+                    .zoomable(rememberZoomState()),
+                bitmap = rotatedDepth.asImageBitmap(),
                 contentDescription = "Depth Image"
             )
             Text(text = "Inference time: ${inferenceTimeState.longValue} ms")
