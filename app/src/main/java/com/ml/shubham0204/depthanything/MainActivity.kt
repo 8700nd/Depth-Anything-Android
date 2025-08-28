@@ -332,7 +332,7 @@ class MainActivity : ComponentActivity() {
                             CoroutineScope(Dispatchers.Default).launch {
                                 val (depthMap, inferenceTime) = depthAnything.predict(bitmap)
                                 val matrix = Matrix().apply {
-                                    postScale(-1f, 1f)
+                                    postRotate(90f)
                                 }
                                 depthBitmap = Bitmap.createBitmap(
                                     colormapInferno(depthMap),
@@ -426,7 +426,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             val rotatedDepth = remember(depthImage) {
-                val matrix = Matrix().apply { postRotate(-90f) } // rotate counterclockwise
+                val matrix = Matrix()
                 Bitmap.createBitmap(depthImage, 0, 0, depthImage.width, depthImage.height, matrix, true)
             }
 

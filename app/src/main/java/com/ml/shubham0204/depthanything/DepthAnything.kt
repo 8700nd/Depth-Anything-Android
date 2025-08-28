@@ -14,7 +14,9 @@ import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.DelegateFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.nnapi.NnApiDelegate
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
@@ -24,6 +26,7 @@ import java.io.FileOutputStream
 import java.io.File
 
 enum class DelegateType { CPU, GPU, NNAPI }
+private const val TAG = "DepthAnythingHelper"
 
 class DepthAnything(context: Context, val modelName: String, delegateType: DelegateType) {
 
@@ -35,22 +38,24 @@ class DepthAnything(context: Context, val modelName: String, delegateType: Deleg
         // Load TFLite model
         val model = loadModelFile(context, modelName)
         val options = Interpreter.Options()
+        options.numThreads = 1
         when (delegateType) {
             DelegateType.GPU -> {
-                try {
+                if (CompatibilityList().isDelegateSupportedOnThisDevice) {
                     options.addDelegate(GpuDelegate())
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    Log.w("DepthAnything", "GPU delegate not available, falling back to CPU")
+                    Log.d(TAG, "GpuDelegate Added")
+                } else {
+                    Log.e(TAG, "GPU Not supported")
                 }
             }
             DelegateType.NNAPI -> {
                 options.setUseNNAPI(true)
+                options.addDelegate(NnApiDelegate())
+                Log.d(TAG, "NnApiDelegate Added")
             }
-            DelegateType.CPU -> {
-
-            }
+            DelegateType.CPU -> {}
         }
+        Log.d(TAG, "create: Model Delegates: " + options.delegates + " useNNAPI " + options.useNNAPI)
         tflite = Interpreter(model, options)
 
         // Get input and output dimensions from the model itself
@@ -60,8 +65,8 @@ class DepthAnything(context: Context, val modelName: String, delegateType: Deleg
         inputDim = inputShape[1] // Assuming NHWC format: [1, height, width, channels]
         outputDim = outputShape[1] // Assuming NHWC format: [1, height, width, 1]
 
-        Log.d("DepthAnything", "Input dim: $inputDim, Output dim: $outputDim")
-        Log.d("DepthAnything", "Input type: ${tflite.getInputTensor(0).dataType()}, Output type: ${tflite.getOutputTensor(0).dataType()}")
+        Log.d(TAG, "Input dim: $inputDim, Output dim: $outputDim")
+        Log.d(TAG, "Input type: ${tflite.getInputTensor(0).dataType()}, Output type: ${tflite.getOutputTensor(0).dataType()}")
     }
 
     @Throws(Exception::class)
@@ -79,7 +84,7 @@ class DepthAnything(context: Context, val modelName: String, delegateType: Deleg
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
     }
 
-    private val rotateTransform = Matrix().apply { postRotate(90f) }
+    private val rotateTransform = Matrix().apply { postRotate(0f) }
 
     suspend fun predict(inputImage: Bitmap): Pair<Bitmap, Long> =
         withContext(Dispatchers.Default) {
@@ -143,7 +148,7 @@ class DepthAnything(context: Context, val modelName: String, delegateType: Deleg
         // Log min/max values for debugging
         val min = pixels.minOrNull() ?: 0f
         val max = pixels.maxOrNull() ?: 1f
-        Log.d("DepthAnything", "Float output range: min=$min, max=$max")
+        Log.d(TAG, "Float output range: min=$min, max=$max")
 
         // Create depth map with proper normalization
         val bitmap = Bitmap.createBitmap(dim, dim, Bitmap.Config.ARGB_8888)
