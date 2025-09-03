@@ -13,11 +13,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 
-class DepthAnything(context: Context, val modelName: String) {
-
+class DepthAnything(context: Context, val modelName: String, val useNnapi: Boolean = false) {
     private val ortEnvironment = OrtEnvironment.getEnvironment()
     val sessionOptions = OrtSession.SessionOptions().also {
-        it.addNnapi()
+        if (useNnapi) {
+            it.addNnapi()
+        }
     }
     private val ortSession =
         ortEnvironment.createSession(context.assets.open(modelName).readBytes(), sessionOptions)

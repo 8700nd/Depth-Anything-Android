@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -44,6 +45,8 @@ import net.engawapg.lib.zoomable.zoomable
 import java.io.File
 import java.io.IOException
 
+private const val TAG = "MainActivity"
+
 class MainActivity : ComponentActivity() {
 
     private var depthImageState = mutableStateOf<Bitmap?>(null)
@@ -54,6 +57,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var depthAnything: DepthAnything
     private var currentPhotoPath: String = ""
     private var selectedModelState = mutableStateOf("")
+    private var useNnapiState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -117,14 +121,22 @@ class MainActivity : ComponentActivity() {
                         showPermissionDialog = true
                     }
                 } else {
-                    ImageSelectionUI(onPermissionDenied = { showPermissionDialog = true })
+                    ImageSelectionUI(
+                        useNnapi = useNnapiState.value,
+                        onNnapiCheckedChange = { useNnapiState.value = it },
+                        onPermissionDenied = { showPermissionDialog = true }
+                    )
                 }
             }
         }
     }
 
     @Composable
-    private fun ImageSelectionUI(onPermissionDenied: () -> Unit) {
+    private fun ImageSelectionUI(
+        useNnapi: Boolean,
+        onNnapiCheckedChange: (Boolean) -> Unit,
+        onPermissionDenied: () -> Unit
+    ) {
         val pickMediaLauncher =
             rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.PickVisualMedia()
@@ -141,11 +153,35 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+        val models = remember { listModelsInAssets() }
+
+        LaunchedEffect(models) {
+            if (selectedModelState.value.isEmpty() && models.isNotEmpty()) {
+                selectedModelState.value = models.first()
+            }
+        }
+
+        LaunchedEffect(selectedModelState.value, useNnapi) {
+            if (selectedModelState.value.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    Log.d(
+                        TAG,
+                        "ImageSelectionUI: Create depthAnything selectedModelState = ${selectedModelState.value}, useNnapi = $useNnapi"
+                    )
+                    depthAnything = DepthAnything(
+                        this@MainActivity,
+                        selectedModelState.value,
+                        useNnapi
+                    )
+                }
+            }
+        }
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
             modifier = Modifier
-                .padding(16.dp)
+                .padding(horizontal = 8.dp)
                 .fillMaxWidth()
         ) {
             Text(
@@ -203,18 +239,24 @@ class MainActivity : ComponentActivity() {
                 }
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
-
             // Model selection dropdown
             var expanded by remember { mutableStateOf(false) }
-            val models = remember { listModelsInAssets() }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = useNnapi,
+                    onCheckedChange = { onNnapiCheckedChange(it) }
+                )
+                Text(text = "Enable NNAPI")
+            }
 
             Box {
                 OutlinedButton(
                     onClick = { expanded = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(selectedModelState.value)
+                    Text(selectedModelState.value.ifEmpty { "No Model" })
                 }
                 DropdownMenu(
                     expanded = expanded,
@@ -227,7 +269,6 @@ class MainActivity : ComponentActivity() {
                             onClick = {
                                 selectedModelState.value = model
                                 expanded = false
-                                depthAnything = DepthAnything(this@MainActivity, model)
                             }
                         )
                     }
